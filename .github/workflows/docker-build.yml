@@ -19,10 +19,10 @@ jobs:
           password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Build Docker image
-        run: docker build -t myapp golang/dockerfile .
+        run: docker build -t my-tyk -f golang/dockerfile .
 
       - name: Tag Docker image
-        run: docker tag myapp ${{ secrets.DOCKER_USERNAME }}/myapp:latest
+        run: docker tag my-tyk ${{ secrets.DOCKER_USERNAME }}/my-tyk:latest
 
       - name: Push Docker image
-        run: docker push ${{ secrets.DOCKER_USERNAME }}/myapp:latest
+        run: docker push ${{ secrets.DOCKER_USERNAME }}/my-tyk:latest
