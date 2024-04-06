@@ -19,7 +19,7 @@ jobs:
           password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Build Docker image
-        run: docker build -t myapp ./golang/docker/dockerfile
+        run: docker build -t myapp ./golang/dockerfile
 
       - name: Tag Docker image
         run: docker tag myapp ${{ secrets.DOCKER_USERNAME }}/myapp:latest
