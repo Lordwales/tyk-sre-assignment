@@ -7,10 +7,12 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 
 	"context"
 	"encoding/json"
 
+	db "k8s.io/api/apps/v1"
 	netv1 "k8s.io/api/networking/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -70,11 +72,6 @@ func main() {
 
 	fmt.Printf("NetworkPolicy created to isolate traffic for namespace: %s and %s workloads\n", *namespace, *selector)
 
-	// Check deployment health after the server has started
-	// if err := checkDeploymentHealth(clientset); err != nil {
-	// 	panic(err)
-	// }
-
 	if err := startServer(*listenAddr, clientset); err != nil {
 		panic(err)
 	}
@@ -126,24 +123,28 @@ func startServer(listenAddr string, clientset kubernetes.Interface) error {
 func healthHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 
-	_, err := w.Write([]byte("ok"))
+	_, err := w.Write([]byte("ok oooo"))
 	if err != nil {
 		fmt.Println("failed writing to response")
 	}
+}
+
+// Define struct for holding deployment health information
+type DeploymentHealth struct {
+	Name              string `json:"name"`
+	Namespace         string `json:"namespace"`
+	DesiredReplicas   int32  `json:"desiredReplicas"`
+	CurrentReplicas   int32  `json:"currentReplicas"`
+	AvailableReplicas int32  `json:"availableReplicas"`
 }
 
 // deploymentHealthHandler responds with the health status of deployments in the Kubernetes cluster.
 func deploymentHealthHandler(w http.ResponseWriter, r *http.Request, clientset kubernetes.Interface) {
 	// Retrieve deployments client
 	deploymentsClient := clientset.AppsV1().Deployments(v1.NamespaceAll)
+	var wg sync.WaitGroup
 
-	// Define struct for holding deployment health information
-	type DeploymentHealth struct {
-		Name              string `json:"name"`
-		DesiredReplicas   int32  `json:"desiredReplicas"`
-		CurrentReplicas   int32  `json:"currentReplicas"`
-		AvailableReplicas int32  `json:"availableReplicas"`
-	}
+	healthChan := make(chan DeploymentHealth)
 
 	// Slice to hold information about unhealthy deployments
 	var unhealthyDeployments []DeploymentHealth
@@ -156,22 +157,30 @@ func deploymentHealthHandler(w http.ResponseWriter, r *http.Request, clientset k
 		return
 	}
 
-	// Iterate through deployments
-	for _, d := range deployments.Items {
-		desiredReplicas := *d.Spec.Replicas
-		currentReplicas := d.Status.Replicas
-		availableReplicas := d.Status.AvailableReplicas
+	// Increment the wait group counter
+	wg.Add(len(deployments.Items))
 
-		// Check if deployment is unhealthy
-		if currentReplicas != desiredReplicas || availableReplicas != desiredReplicas {
+	// Iterate through deployments and fetch health information concurrently
+	for _, deployment := range deployments.Items {
+		go fetchDeploymentHealth(&wg, deployment, healthChan)
+	}
+
+	// Start a goroutine to wait for all fetchDeploymentHealth goroutines to finish
+	go func() {
+		wg.Wait()
+		close(healthChan) // Close the channel once all goroutines are done
+	}()
+
+	var healthyDeployment DeploymentHealth
+
+	// Collect the results from goroutines
+	for i := 0; i < len(deployments.Items); i++ {
+		health := <-healthChan
+		if health != healthyDeployment {
 			// Append deployment health information to the slice
-			unhealthyDeployments = append(unhealthyDeployments, DeploymentHealth{
-				Name:              d.Name,
-				DesiredReplicas:   desiredReplicas,
-				CurrentReplicas:   currentReplicas,
-				AvailableReplicas: availableReplicas,
-			})
+			unhealthyDeployments = append(unhealthyDeployments, health)
 		}
+
 	}
 
 	// If there are no unhealthy deployments, respond with a message indicating all pods are healthy
@@ -184,10 +193,8 @@ func deploymentHealthHandler(w http.ResponseWriter, r *http.Request, clientset k
 		return
 	}
 
-	// Encode response JSON
 	responseJSON, err := json.Marshal(unhealthyDeployments)
 	if err != nil {
-		// If there is an error encoding JSON, respond with an internal server error
 		http.Error(w, fmt.Sprintf("Error encoding JSON: %v", err), http.StatusInternalServerError)
 		return
 	}
@@ -198,6 +205,28 @@ func deploymentHealthHandler(w http.ResponseWriter, r *http.Request, clientset k
 	_, err = w.Write(responseJSON)
 	if err != nil {
 		fmt.Println("Failed writing response:", err)
+	}
+}
+
+// fetchDeploymentHealth fetches health information for a given deployment and sends it through a channel.
+func fetchDeploymentHealth(wg *sync.WaitGroup, deployment db.Deployment, healthChan chan<- DeploymentHealth) {
+	defer wg.Done()
+	desiredReplicas := *deployment.Spec.Replicas
+	currentReplicas := deployment.Status.Replicas
+	availableReplicas := deployment.Status.AvailableReplicas
+
+	isUnhealthy := currentReplicas != desiredReplicas || availableReplicas != desiredReplicas
+
+	if isUnhealthy {
+		healthChan <- DeploymentHealth{
+			Name:              deployment.Name,
+			Namespace:         deployment.Namespace,
+			DesiredReplicas:   desiredReplicas,
+			CurrentReplicas:   currentReplicas,
+			AvailableReplicas: availableReplicas,
+		}
+	} else {
+		return
 	}
 }
 
@@ -258,35 +287,3 @@ func parseLabelSelector(selector string) map[string]string {
 	}
 	return labels
 }
-
-// checkDeploymentHealth checks the health of all deployments in the Kubernetes cluster.
-// func checkDeploymentHealth(clientset kubernetes.Interface) error {
-// 	// Retrieve a client for accessing deployments across all namespaces
-// 	deploymentsClient := clientset.AppsV1().Deployments(v1.NamespaceAll)
-
-// 	// List all deployments
-// 	deployments, err := deploymentsClient.List(context.Background(), v1.ListOptions{})
-// 	if err != nil {
-// 		// Print error if listing deployments fails
-// 		return fmt.Errorf("Error listing deployments: %v\n", err)
-// 	}
-
-// 	// Iterate through each deployment
-// 	for _, d := range deployments.Items {
-// 		// Retrieve desired number of replicas from deployment spec
-// 		desiredReplicas := *d.Spec.Replicas
-// 		// Retrieve current number of replicas
-// 		currentReplicas := d.Status.Replicas
-// 		// Retrieve number of available replicas
-// 		availableReplicas := d.Status.AvailableReplicas
-
-// 		// Check if current replicas or available replicas differ from desired replicas
-// 		if currentReplicas != desiredReplicas || availableReplicas != desiredReplicas {
-// 			// Print deployment health status if unhealthy
-// 			return fmt.Errorf("Deployment %s is unhealthy: Desired=%d, Current=%d, Available=%d\n",
-// 				d.Name, desiredReplicas, currentReplicas, availableReplicas)
-// 		}
-// 	}
-
-// 	return nil
-// }

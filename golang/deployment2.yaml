@@ -17,9 +17,9 @@ spec:
         image: nginx:latest
         ports:
         - containerPort: 80
-        # readinessProbe:      
-        #   httpGet:
-        #     path: /healthz            
-        #     port: 80
-        #   initialDelaySeconds: 15     
-        #   periodSeconds: 10           
+        readinessProbe:      
+          httpGet:
+            path: /healthz            
+            port: 80
+          initialDelaySeconds: 15     
+          periodSeconds: 10           
