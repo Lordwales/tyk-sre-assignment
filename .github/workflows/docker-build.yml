@@ -42,10 +42,10 @@ jobs:
             docker push ${{ secrets.DOCKER_USERNAME }}/my-tyk:latest
           fi
 
-      - name: Upload Snyk report as sarif 📦
-        uses: github/codeql-action/upload-sarif@v2
-        with:
-          sarif_file: snyk.sarif
+      # - name: Upload Snyk report as sarif 📦
+      #   uses: github/codeql-action/upload-sarif@v2
+      #   with:
+      #     sarif_file: snyk.sarif
 
       
 
