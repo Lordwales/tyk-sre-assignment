@@ -8,7 +8,7 @@ RUN go mod download
 COPY . .
 
 # Build the Go application statically with CGO disabled
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o app .
+RUN CGO_ENABLED=0 GOOS=linux GOARCH="amd64 arm64 arm" go build -a -installsuffix cgo -o app .
 
 FROM alpine:latest
 WORKDIR /app
