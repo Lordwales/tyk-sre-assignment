@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -14,6 +15,7 @@ import (
 
 	db "k8s.io/api/apps/v1"
 	netv1 "k8s.io/api/networking/v1"
+	er "k8s.io/apimachinery/pkg/api/errors"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
@@ -42,24 +44,24 @@ func main() {
 
 	kConfig, err := clientcmd.BuildConfigFromFlags("", *kubeconfig)
 	if err != nil {
-		panic(err)
+		log.Fatalf("Error building kubeconfig: %v", err)
 	}
 
 	clientset, err := kubernetes.NewForConfig(kConfig)
 	if err != nil {
-		panic(err)
+		log.Fatalf("Error creating clientset: %v", err)
 	}
 
 	version, err := getKubernetesVersion(clientset)
 	if err != nil {
-		panic(err)
+		log.Fatalf("Error getting Kubernetes version: %v", err)
 	}
 
 	fmt.Printf("Connected to Kubernetes %s\n", version)
 
 	// Check for required flags
 	if *namespace == "" || *selector == "" {
-		fmt.Println("Error: Missing required flags. Please provide values for all flags.")
+		log.Fatal("Error: Missing required flags. Please provide values for all flags.")
 		flag.PrintDefaults()
 		os.Exit(1)
 	}
@@ -70,10 +72,10 @@ func main() {
 		log.Fatalf("Error creating NetworkPolicy: %v", err)
 	}
 
-	fmt.Printf("NetworkPolicy created to isolate traffic for namespace: %s and %s workloads\n", *namespace, *selector)
+	log.Printf("NetworkPolicy created to isolate traffic for namespace: %s and %s workloads\n", *namespace, *selector)
 
 	if err := startServer(*listenAddr, clientset); err != nil {
-		panic(err)
+		log.Fatalf("Error starting HTTP server: %v", err)
 	}
 
 }
@@ -114,7 +116,7 @@ func startServer(listenAddr string, clientset kubernetes.Interface) error {
 		_, _ = w.Write([]byte("Kubernetes API server is reachable"))
 	})
 
-	fmt.Printf("Server listening on %s\n", listenAddr)
+	log.Printf("Server listening on %s\n", listenAddr)
 
 	return http.ListenAndServe(listenAddr, nil)
 }
@@ -125,7 +127,7 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 
 	_, err := w.Write([]byte("ok oooo"))
 	if err != nil {
-		fmt.Println("failed writing to response")
+		log.Println("Failed writing response:", err)
 	}
 }
 
@@ -188,7 +190,7 @@ func deploymentHealthHandler(w http.ResponseWriter, r *http.Request, clientset k
 		responseText := "All deployments are healthy"
 		_, err := w.Write([]byte(responseText))
 		if err != nil {
-			fmt.Println("Failed writing response:", err)
+			log.Println("Failed writing response:", err)
 		}
 		return
 	}
@@ -204,7 +206,7 @@ func deploymentHealthHandler(w http.ResponseWriter, r *http.Request, clientset k
 	w.WriteHeader(http.StatusOK)
 	_, err = w.Write(responseJSON)
 	if err != nil {
-		fmt.Println("Failed writing response:", err)
+		log.Println("Failed writing response:", err)
 	}
 }
 
@@ -238,11 +240,13 @@ func checkKubernetesAPIConnectivity(clientset kubernetes.Interface) error {
 	return nil
 }
 
+var ErrNetworkPolicyExists = errors.New("network policy already exists")
+
 func createNetworkPolicy(clientset kubernetes.Interface, namespace, selector string) error {
 	// Check if the NetworkPolicy already exists
 	_, err := clientset.NetworkingV1().NetworkPolicies(namespace).Get(context.Background(), fmt.Sprintf("isolate-%s", namespace), v1.GetOptions{})
 	if err == nil {
-		// NetworkPolicy already exists, you can choose to update it if needed
+		// NetworkPolicy already exists, we can decode to update it or just skip creation
 		return nil
 	}
 
@@ -271,7 +275,18 @@ func createNetworkPolicy(clientset kubernetes.Interface, namespace, selector str
 
 	// Apply the NetworkPolicy to the destination namespace
 	_, err = clientset.NetworkingV1().NetworkPolicies(namespace).Create(context.Background(), policy, v1.CreateOptions{})
-	return err
+	if err != nil {
+		if statusErr, ok := err.(*er.StatusError); ok {
+			if statusErr.Status().Code == http.StatusConflict {
+				log.Printf("NetworkPolicy already exists: %v", err)
+				return ErrNetworkPolicyExists // Custom error type
+			}
+		}
+		log.Printf("Error creating NetworkPolicy: %v", err)
+		return err
+	}
+
+	return nil
 }
 
 func parseLabelSelector(selector string) map[string]string {
