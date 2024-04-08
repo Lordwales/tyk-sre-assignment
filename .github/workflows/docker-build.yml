@@ -28,15 +28,26 @@ jobs:
         run: docker tag my-tyk ${{ secrets.DOCKER_USERNAME }}/my-tyk:latest
 
       - name: Scan Docker image
-        uses: snyk/docker-scan-action@v2
+        uses: snyk/actions/docker@master
+        continue-on-error: true
         with:
           image: ${{ secrets.DOCKER_USERNAME }}/my-tyk:latest 
+        args: --file=Dockerfile --severity-threshold=high --sarif-file-output=snyk.sarif
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
 
       - name: Push Docker image (if scan passes) 
         run: |
           if [[ $? -eq 0 ]]; then
             docker push ${{ secrets.DOCKER_USERNAME }}/my-tyk:latest
           fi
+
+      - name: Upload Snyk report as sarif 📦
+        uses: github/codeql-action/upload-sarif@v2
+        with:
+          sarif_file: snyk.sarif
+
+      
 
       # - name: Push Docker image
       #   run: docker push ${{ secrets.DOCKER_USERNAME }}/my-tyk:latest
