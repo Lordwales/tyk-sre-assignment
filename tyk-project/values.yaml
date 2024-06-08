@@ -84,9 +84,9 @@ readinessProbe:
   httpGet:
     path: /healthz
     port: 8040
-  initialDelaySeconds: 30  # Delay before the first probe is initiated.
-  periodSeconds: 60         # How often to perform the probe.
-  timeoutSeconds: 30       # When a probe times out.
+  initialDelaySeconds: 30  
+  periodSeconds: 60         
+  timeoutSeconds: 30       
   successThreshold: 1 
     
 

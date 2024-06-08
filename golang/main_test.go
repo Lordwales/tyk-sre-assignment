@@ -55,63 +55,6 @@ func TestHealthHandler(t *testing.T) {
 	assert.Equal(t, "ok", string(resp))
 }
 
-// func TestDeploymentHealthHandler(t *testing.T) {
-// 	// Create a fake Kubernetes clientset
-// 	clientset := fake.NewSimpleClientset()
-
-// 	// Create a mock unhealthy deployment
-// 	unhealthyDeployment := &appsv1.Deployment{
-// 		ObjectMeta: metav1.ObjectMeta{Name: "test-deployment"},
-// 		Spec: appsv1.DeploymentSpec{
-// 			Replicas: int32Ptr(4), // Set desired replicas to 4
-// 		},
-// 		Status: appsv1.DeploymentStatus{
-// 			Replicas:          4, // Set current replicas to 3 (unhealthy)
-// 			AvailableReplicas: 4,
-// 		},
-// 	}
-
-// 	// Add the mock unhealthy deployment to the fake clientset
-// 	_, _ = clientset.AppsV1().Deployments("test-namespace").Create(context.TODO(), unhealthyDeployment, metav1.CreateOptions{})
-
-// 	// Create a request to simulate the HTTP request to the /deployment-health endpoint
-// 	req := httptest.NewRequest(http.MethodGet, "/deployment-health", nil)
-
-// 	// Create a response recorder to capture the response
-// 	rec := httptest.NewRecorder()
-
-// 	// Call the deploymentHealthHandler function with the fake clientset
-// 	deploymentHealthHandler(rec, req, clientset)
-
-// 	// Get the HTTP response
-// 	res := rec.Result()
-
-// 	// Check if the response status code is 200 OK
-// 	assert.Equal(t, http.StatusOK, res.StatusCode)
-
-// 	// Read the response body
-// 	body, err := ioutil.ReadAll(res.Body)
-// 	print(body)
-// 	assert.NoError(t, err)
-
-// 	// Check if the response body contains the expected message indicating the unhealthy deployment
-// 	// assert.Contains(t, string(body), "test-deployment")
-
-// 	// Check if the number of replicas is not equal to the desired replicas
-// 	if unhealthyDeployment.Status.Replicas != *unhealthyDeployment.Spec.Replicas {
-// 		// If the deployment is unhealthy, output a message indicating it's unhealthy
-// 		assert.Contains(t, string(body), "test-deployment is unhealthy")
-// 	} else {
-// 		// If the deployment is healthy, output a message indicating it's healthy
-// 		assert.Contains(t, string(body), "All deployments are healthy")
-// 	}
-// }
-
-// // Utility function to create a pointer to an int32 value
-// func int32Ptr(i int32) *int32 {
-// 	return &i
-// }
-
 func TestCreateNetworkPolicy(t *testing.T) {
 	// Create a fake Kubernetes clientset
 	clientset := fake.NewSimpleClientset()
